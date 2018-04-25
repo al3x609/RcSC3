@@ -1,7 +1,22 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import docker
+# import os
+# import getpass
+# parser = OptionParser()
+
+# parser.add_option('-d', '--display', dest='display_num', action='store',
+#                   type='str', default=' 5901',
+#                   help='set display num to connect'
+#                   )
+
+# parser.add_option('-l', '--listen', dest='listen_port', action='store',
+#                   type='str', default='6080',
+#                   help='listen port to proxy noVNC'
+#                   )
+
+# (options, args) = parser.parse_args()
 
 
 def run_nclient(listen_port, cmd, username, user, group, home):
@@ -28,14 +43,6 @@ def run_nclient(listen_port, cmd, username, user, group, home):
             "NVIDIA_DRIVER_CAPABILITIES=all",
             "QT_XKB_CONFIG_ROOT=/usr/share/X11/xkb"
         ],
-        volumes={
-            home: {'bind': home, 'mode': 'ro'},
-            '/etc/group': {'bind': '/etc/group', 'mode': 'ro'},
-            '/etc/passwd': {'bind': '/etc/passwd', 'mode': 'ro'},
-            '/etc/sudoers.d': {'bind': '/etc/sudoers.d', 'mode': 'ro'},
-            '/tmp/.X11-unix': {'bind': '/tmp/.X11-unix', 'mode': 'rw'},
-            home + '/.Xauthority': {'bind': home + '/.Xauthority', 'mode': 'ro'}
-        }
     )
     return nclient
 # Only for testing
