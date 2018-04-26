@@ -1,0 +1,266 @@
+-------------------------------------------------------------------------------------------------
+# listando la configuración inicial del disco 
+-------------------------------------------------------------------------------------------------
+	lsblk -fm
+	
+	NAME   FSTYPE LABEL UUID                                 MOUNTPOINT NAME     SIZE OWNER GROUP MODE
+	sda                                                                 sda    465.8G root  disk  brw-rw----
+	|-sda1 vfat         4BC1-099D                            /boot/efi  |-sda1     5G root  disk  brw-rw----
+	|-sda2 xfs          7935ba68-d08b-4971-bf90-10ca07f7aa1e /usr       |-sda2   150G root  disk  brw-rw----
+	|-sda3 xfs          568da275-9d3e-4458-98c0-2b973fa41540 /          |-sda3    80G root  disk  brw-rw----
+	|-sda4 xfs          7799bf60-f1d1-43dd-b4f8-6558483def2f /var       |-sda4    80G root  disk  brw-rw----
+	|-sda5 xfs          715c71fc-9f96-4f4f-b704-3155699da72b /tmp       |-sda5    20G root  disk  brw-rw----
+	|-sda6 swap         c6e5863d-3ab1-4b8d-86a0-745d16ce1086 [SWAP]     |-sda6    16G root  disk  brw-rw----
+	`-sda7 xfs          318bcb9a-88f2-4ee6-9a73-108eaee0aafd /data      `-sda7 114.8G root  disk  brw-rw----
+
+-------------------------------------------------------------------------------------------------
+# Pre configuración (directorio de trabajo /data)
+-------------------------------------------------------------------------------------------------
+- limpiando kernes viejos
+	yum install -y yum-utils
+	package-cleanup --oldkernels --count=2
+
+- se edita /etc/default/grub agregado al final de la linea GRUB_CMDLINE_LINUX  para deshabilitar drivers nouveau
+rdblacklist=nouveau
+options nouveau modeset=0
+
+- se procede a actualizar grub2
+	grub2-mkconfig -o /boot/grub2/grub.cfg
+
+- paquetes para reconstruir modulos nvidia despues de un update e instalación de paquetes necesarios
+	yum -y install epel-release  # repositorio
+	yum -y install dkms 
+	yum -y install xorg-x11-server xorg-x11-server-devel
+
+- creación nuevo "inittramfs" y backup del existente.
+	mv /boot/initramfs-$(uname -r).img /boot/initramfs-$(uname -r).img.bak  
+	dracut -v /boot/initramfs-$(uname -r).img $(uname -r)
+
+-------------------------------------------------------------------------------------------------
+# Instalación  mpich-3.2.1 e hydra-3.2.1
+-------------------------------------------------------------------------------------------------
+	mkdir -p /data/packages/mpich
+
+	wget -qO- 'http://www.mpich.org/static/downloads/3.2.1/mpich-3.2.1.tar.gz' | tar xvz -C /data/packages/mpich
+	cd /data/packages/mpi/mpich-3.2.1
+	./configure
+	make -j16
+	make install
+
+	tar xvzf -C /data/packages/mpich < <(wget -qO- 'http://www.mpich.org/static/downloads/3.2.1/hydra-3.2.1.tar.gz')
+	cd /data/packages/mpi/hydra-3.2.1
+	./configure
+	make -j16
+	make install
+
+-------------------------------------------------------------------------------------------------
+# Instalación de nvidia CUDA toolkit 8.0 (rpm network mode) << cuda 8 last suport for ngrid 2 >>
+# es preciso instalar primero cuda antes que los drivers puesto que el paquete cuda trae una 
+# modulos de kernel verion 375.1 que no son compatibles con la tarjeta ngrid2 
+-------------------------------------------------------------------------------------------------
+	wget 'https://developer.download.nvidia.com/compute/cuda/repos/rhel7/x86_64/cuda-repo-rhel7-8.0.61-1.x86_64.rpm' && \
+	rpm -i cuda-repo-rhel7-8.0.61-1.x86_64.rpm && \
+	yum clean all && \
+	yum install -y cuda-8-0
+	
+- ajustando las variables de entorno para desarrollo
+	export PATH=/usr/local/cuda-8.0/bin${PATH:+:${PATH}}  && \
+	export LD_LIBRARY_PATH=/usr/local/cuda-8.0/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}} && \
+	export NVIDIA_CUDA-8.0_Samples=/data/packages/NVIDIA_CUDA-8.0_Samples/bin/x86_64/linux/release 
+
+- instalación de cuda samples 8.0
+	cuda-install-samples-8.0.sh .
+	cd $NVIDIA_CUDA-8.0_Samples
+	make -j16
+
+- testing cuda-8 by sample deviceQuery
+
+	./deviceQuery 
+--------------------------------------------------------------------
+	 CUDA Device Query (Runtime API) version (CUDART static linking)
+
+	Detected 2 CUDA Capable device(s)
+
+	Device 0: "GRID K2"
+	  CUDA Driver Version / Runtime Version          8.0 / 8.0
+	  CUDA Capability Major/Minor version number:    3.0
+	  Total amount of global memory:                 4034 MBytes (4229431296 bytes)
+	  ( 8) Multiprocessors, (192) CUDA Cores/MP:     1536 CUDA Cores
+	  GPU Max Clock rate:                            745 MHz (0.75 GHz)
+	  Memory Clock rate:                             2500 Mhz
+	  Memory Bus Width:                              256-bit
+	  L2 Cache Size:                                 524288 bytes
+	  Maximum Texture Dimension Size (x,y,z)         1D=(65536), 2D=(65536, 65536), 3D=(4096, 4096, 4096)
+	  Maximum Layered 1D Texture Size, (num) layers  1D=(16384), 2048 layers
+	  Maximum Layered 2D Texture Size, (num) layers  2D=(16384, 16384), 2048 layers
+	  Total amount of constant memory:               65536 bytes
+	  Total amount of shared memory per block:       49152 bytes
+	  Total number of registers available per block: 65536
+	  Warp size:                                     32
+	  Maximum number of threads per multiprocessor:  2048
+	  Maximum number of threads per block:           1024
+	  Max dimension size of a thread block (x,y,z): (1024, 1024, 64)
+	  Max dimension size of a grid size    (x,y,z): (2147483647, 65535, 65535)
+	  Maximum memory pitch:                          2147483647 bytes
+	  Texture alignment:                             512 bytes
+	  Concurrent copy and kernel execution:          Yes with 2 copy engine(s)
+	  Run time limit on kernels:                     No
+	  Integrated GPU sharing Host Memory:            No
+	  Support host page-locked memory mapping:       Yes
+	  Alignment requirement for Surfaces:            Yes
+	  Device has ECC support:                        Disabled
+	  Device supports Unified Addressing (UVA):      Yes
+	  Device PCI Domain ID / Bus ID / location ID:   0 / 12 / 0
+	  Compute Mode:
+	     < Default (multiple host threads can use ::cudaSetDevice() with device simultaneously) >
+
+	Device 1: "GRID K2" (la misma salida...)
+-----------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------
+# Instalación drivers propietarios dmesg | grep -i nvidia  > Driver Version: 367.124 
+-------------------------------------------------------------------------------------------------	
+- descargar drivers propietarios
+	wget -L http://us.download.nvidia.com/XFree86/Linux-x86_64/367.124/NVIDIA-Linux-x86_64-367.124.run
+	chmod +x NVIDIA-Linux-x86_64-367.124.run
+	./NVIDIA-Linux*.run 
+
+- se procede a correr la utilidad nvdia-xconfig para actualizar X configuración, con parametro adicional multiGPU
+	nvidia-xconfig -a --use-display-device=none --virtual=1920x1200  && reboot
+
+-versiondriver instalado  NVIDIA Accelerated Graphics Driver for Linux-x86_64 (version: 367.124)
+	lspci -nn | grep VGA
+		01:00.1 VGA compatible controller [0300]: Matrox Electronics Systems Ltd. MGA G200EH [102b:0533] (rev 01)
+		0c:00.0 VGA compatible controller [0300]: NVIDIA Corporation GK104GL [GRID K2] [10de:11bf] (rev a1)
+		0d:00.0 VGA compatible controller [0300]: NVIDIA Corporation GK104GL [GRID K2] [10de:11bf] (rev a1)
+
+	nvidia-smi
+		Fri Apr  6 17:51:56 2018
+		+-----------------------------------------------------------------------------+
+		| NVIDIA-SMI 367.124                Driver Version: 367.124                   |
+		|-------------------------------+----------------------+----------------------+
+		| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+		| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
+		|===============================+======================+======================|
+		|   0  GRID K2             Off  | 0000:0C:00.0     Off |                  Off |
+		| N/A   57C    P0    43W / 117W |      0MiB /  4033MiB |      0%      Default |
+		+-------------------------------+----------------------+----------------------+
+		|   1  GRID K2             Off  | 0000:0D:00.0     Off |                  Off |
+		| N/A   43C    P0    35W / 117W |      0MiB /  4033MiB |      0%      Default |
+		+-------------------------------+----------------------+----------------------+
+
+		+-----------------------------------------------------------------------------+
+		| Processes:                                                       GPU Memory |
+		|  GPU       PID  Type  Process name                               Usage      |
+		|=============================================================================|
+		|  No running processes found                                                 |
+		+-----------------------------------------------------------------------------+
+
+	 
+	> Peer access from GRID K2 (GPU0) -> GRID K2 (GPU1) : Yes
+	> Peer access from GRID K2 (GPU1) -> GRID K2 (GPU0) : Yes
+
+	deviceQuery, CUDA Driver = CUDART, CUDA Driver Version = 8.0, CUDA Runtime Version = 8.0, NumDevs = 2, Device0 = GRID K2, Device1 = GRID K2
+	Result = PASS
+
+
+
+-------------------------------------------------------------------------------------------------
+# Instalación de Docker Commiunity Edition estable
+# https://docs.docker.com/install/linux/docker-ce/centos/#install-docker-ce
+-------------------------------------------------------------------------------------------------
+- eliminar paquetes antiguos
+	yum remove docker \
+                  docker-client \
+                  docker-client-latest \
+                  docker-common \
+                  docker-latest \
+                  docker-latest-logrotate \
+                  docker-logrotate \
+                  docker-selinux \
+                  docker-engine-selinux \
+                  docker-engine
+
+- dependencias              
+	yum install -y yum-utils \
+  		device-mapper-persistent-data \
+  		lvm2
+
+- repositorio e instalación
+ 	yum-config-manager \
+    	--add-repo \
+    	https://download.docker.com/linux/centos/docker-ce.repo
+
+ 	yum install -y docker-ce
+
+-------------------------------------------------------------------------------------------------
+# Instalación de turboVNC
+-------------------------------------------------------------------------------------------------
+	wget 'https://sourceforge.net/projects/turbovnc/files/2.1.2/turbovnc-2.1.2.x86_64.rpm'
+	yum install -y --nogpgcheck -v  turbovnc-2.1.2.x86_64.rpm
+
+-dependencias para el proyecto 
+	yum install xorg-x11-xauth.x86_64 xorg-x11-server-utils 
+		#vnc pass : gatogato 
+
+-------------------------------------------------------------------------------------------------
+# Configuración acceso remoto ssh TCPforwarding
+-------------------------------------------------------------------------------------------------
+-deshabilitar selinux /etc/sysconfig/selinux
+	SELINUX=disabled
+
+-stop firewalld 
+	systemctrl stop firewald
+
+-habilitar settings sshd_config
+	# modificacion Alex al final del archivo
+
+		AllowAgentForwarding yes
+		AllowTcpForwarding yes
+		X11Forwarding yes
+		X11DisplayOffset 10
+
+		TCPKeepAlive yes
+		PrintLastLog yes
+
+		PermitTunnel yes
+		GatewayPorts yes
+
+		PermitRootLogin yes
+		PermitOpen  any
+
+-metodologia de acceso
+    -desde mi equipo remoto
+ 		ssh -Y -L 15000:192.168.66.25:5901 cbernal@200.16.117.113  -v -v 
+
+ 		ssh -Y -L 15000:ngrid:5901 cbernal@guane.sc3.uis.edu.co 
+
+-------------------------------------------------------------------------------------------------
+# Instalación de nvidia-docker
+-------------------------------------------------------------------------------------------------
+- removiendo software antiguo sobre nvidia-docker 1.0
+	docker volume ls -q -f driver=nvidia-docker | xargs -r -I{} -n1 docker ps -q -a -f volume={} | xargs -r docker rm -f
+	yum remove nvidia-docker
+
+- agregando repositorio (proyecto opensource github)
+	distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+	curl -sL https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.repo | \
+    	tee /etc/yum.repos.d/nvidia-docker.repo
+
+- instalando nvidia-docker2
+	yum install -y nvidia-docker2
+	pkill -SIGHUP dockerd
+
+- prueba nvidia-docker runtime (requiere tag para cuda-8) << el resultado debe ser el mismo que nvidia-smi >>
+	docker run --runtime=nvidia --rm nvidia/cuda:8.0-runtime-centos7 nvidia-smi
+
+-------------------------------------------------------------------------------------------------
+# Creando usuarios prueba
+-------------------------------------------------------------------------------------------------
+
+grupos=(paraview  docker) 
+usuarios=(alex ander)  
+groupadd -g 1000 paraview 
+for U in ${usuarios[*]}; do 
+	echo "....:::: Creando user=$U password=$U ::::...."   
+    useradd --home /home/$U --gid 1000 --create-home --password $U --shell /bin/bash --groups paraview,docker $U      
+done 
