@@ -4,10 +4,9 @@
 import os
 import docker
 import subprocess
-from novnc import run_nvnc as nv
-from paraview import run_pv as pv
+import run_nvnc as nv
+import run_pv as pv
 from getpass import getuser
-
 
 
 class RcSC3(object):
@@ -35,18 +34,20 @@ class RcSC3(object):
 
     def start_vnc(self):
         port = 1
-        for i in range(1, 10):
+        cmd = "/tmp/.X" + str(port) + "-lock"
+        while (os.path.isfile(cmd)):
+            port += 1
             cmd = "/tmp/.X" + str(port) + "-lock"
-            if(os.path.isfile(cmd)):
-                port += 1
-            else:
-                name = "' <<ParaView 5.5>> '"
-                # cambio de linea incluido PEP8
-                cmd = "/opt/TurboVNC/bin/vncserver :" + \
-                    str(port) + " -name " + name + " -noxstartup -fg -nohttpd -interframe -mt -nthreads 4"
-                subprocess.call(cmd, shell=True)
-                break
-        self.__set_display(port + 5900)
+        if(port < 10):
+            name = "' <<ParaView 5.5>> '"
+            # cambio de linea incluido PEP8
+            cmd = "/opt/TurboVNC/bin/vncserver :" + \
+                str(port) + " -name " + name + " -noxstartup -fg -nohttpd -interframe -mt -nthreads 4"
+            subprocess.call(cmd, shell=True)
+            self.__set_display(port + 5900)
+            return True
+        else:
+            return False
 
     def listen_port(self):
         # verifica que el puerto este libre 0: <ocupado> 1: <libre>
@@ -68,26 +69,29 @@ class RcSC3(object):
         subprocess.call(cmd, shell=True)
 
     def menu(self):
+        try:
+            client_paraview = pv.run_pclient(
+                displayVar=str(self.get_display() - 5900),
+                username=self.username,
+                user=self.user,
+                group=self.group,
+                home=self.home
+            )
 
-        str_tmp = "192.168.66.25:" + str(self.get_display())
-        cmd_vnc = ["--vnc", str_tmp]
+            str_tmp = "192.168.66.25:" + str(self.get_display())
+            cmd_vnc = ["--vnc", str_tmp]
+            client_nvnc = nv.run_nclient(
+                listen_port=self.get_listen(),
+                cmd=cmd_vnc,
+                username=self.username,
+                user=self.user,
+                group=self.group,
+                home=self.home
 
-        client_nvnc = nv.run_nclient(
-            listen_port=self.get_listen(),
-            cmd=cmd_vnc,
-            username=self.username,
-            user=self.user,
-            group=self.group,
-            home=self.home
+            )
 
-        )
-        client_paraview = pv.run_pclient(
-            displayVar=str(self.get_display() - 5900),
-            username=self.username,
-            user=self.user,
-            group=self.group,
-            home=self.home
-        )
+        except Exception as e:
+            raise
 
         print ("")
         print ("******************************************************************")
@@ -107,14 +111,13 @@ if __name__ == "__main__":
 #    try:
     subprocess.call("xhost + > /dev/null 2>&1", shell=True)
 
-    c.start_vnc()
-    print(" vnc iniciado en disiplay :{}".format(c.get_display()))
-
-    c.listen_port()
-    print(" proxy escucha en :{}".format(c.get_listen()))
-
-    c.menu()
-
+    if(c.start_vnc()):
+        print(" vnc iniciado en disiplay :{}".format(c.get_display()))
+        c.listen_port()
+        print(" proxy escucha en :{}".format(c.get_listen()))
+        c.menu()
+    else:
+        print(" No hay recursos disponibles")
     subprocess.call("xhost - > /dev/null 2>&1", shell=True)
 #   except Exception:
 #    print (" Find a bug in somewhere! :| ")
