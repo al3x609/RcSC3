@@ -3,21 +3,28 @@
 
 import docker
 
-#displayVar = '1'
-#user = '0'
-#group = '0'
-#home = '/root'
-#username = 'root'
 
-
-def run_pclient(displayVar, user, group, home, username):
+def run_pclient(displayVar, user, group, home, username, server_port, paralelo):
     imageName = "al3x609/paraview:5.5"
     containerName = "pview-" + username
     pclient = docker.from_env()
+    if(paralelo):
+        server_url = "--server-url=cs://192.168.66.25:" + str(server_port)
+        cmd = [
+            "paraview",
+            "--disable-registry",
+            server_url
+        ]
+    else:
+        cmd = [
+            "paraview",
+            "--disable-registry"
+        ]
 
     try:
         pclient.containers.run(
             user=str(user) + ":" + str(group),
+            command=cmd,
             detach=True,
             auto_remove=True,
             image=imageName,
@@ -41,7 +48,7 @@ def run_pclient(displayVar, user, group, home, username):
                 '/etc/shadow': {'bind': '/etc/shadow', 'mode': 'ro'},
                 '/etc/passwd': {'bind': '/etc/passwd', 'mode': 'ro'},
                 '/etc/sudoers.d': {'bind': '/etc/sudoers.d', 'mode': 'ro'},
-                '/tmp/.X11-unix': {'bind': '/tmp/.X11-unix', 'mode': 'rw'},                
+                '/tmp/.X11-unix': {'bind': '/tmp/.X11-unix', 'mode': 'rw'}
             }
         )
     except Exception as e:
