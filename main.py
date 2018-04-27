@@ -6,6 +6,7 @@ import docker
 import subprocess
 import run_nvnc as nv
 import run_pv as pv
+import run_pv_server as spv
 from getpass import getuser
 
 
@@ -65,21 +66,36 @@ class RcSC3(object):
         self.__set_listen(port)
 
     def __clear(self):
-        cmd = "/opt/TurboVNC/bin/vncserver -kill :" + str(self.display)
+        cmd = "/opt/TurboVNC/bin/vncserver -kill :" + str(self.get_display())
         subprocess.call(cmd, shell=True)
 
-    def menu(self):
+    def menu(self, parallel,n_gpu, np):
         try:
+            if(parallel):
+                server_paraview = spv.run_ps_client(
+                    displayVar=str(self.get_display() - 5900),
+                    user=self.user,
+                    group=self.group,
+                    home=self.home,
+                    username=self.username,
+                    server_port=11111,
+                    np=np,
+                    n_gpu=n_gpu
+                )
+
             client_paraview = pv.run_pclient(
                 displayVar=str(self.get_display() - 5900),
                 username=self.username,
                 user=self.user,
                 group=self.group,
-                home=self.home
+                home=self.home,
+                server_port=11111,
+                paralelo=parallel
             )
 
             str_tmp = "192.168.66.25:" + str(self.get_display())
             cmd_vnc = ["--vnc", str_tmp]
+
             client_nvnc = nv.run_nclient(
                 listen_port=self.get_listen(),
                 cmd=cmd_vnc,
@@ -115,7 +131,7 @@ if __name__ == "__main__":
         print(" vnc iniciado en disiplay :{}".format(c.get_display()))
         c.listen_port()
         print(" proxy escucha en :{}".format(c.get_listen()))
-        c.menu()
+        c.menu(parallel=True, n_gpu=1, np=1)
     else:
         print(" No hay recursos disponibles")
     subprocess.call("xhost - > /dev/null 2>&1", shell=True)
