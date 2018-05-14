@@ -6,7 +6,6 @@ import docker
 import subprocess
 import run_nvnc as nv
 import run_pv as pv
-import run_pv_server as spv
 from getpass import getuser
 from optparse import OptionParser
 
@@ -38,6 +37,7 @@ class RcSC3(object):
     def __set_listen_proxy(self, listen_port):
         self.__listen_proxy = listen_port
 
+
     def get_listen_proxy(self):
         return self.__listen_proxy
 
@@ -51,13 +51,14 @@ class RcSC3(object):
             name = "' <<ParaView 5.5>> '"
             # cambio de linea incluido PEP8
             cmd = "/opt/TurboVNC/bin/vncserver :" + \
-                str(port) + " -name " + name + " -noxstartup -fg -nohttpd -interframe -mt -nthreads 4"
+                str(port) + " -name " + name + \
+                " -noxstartup -fg -nohttpd -virtualtablet -interframe -autokill -mt -nthreads 4"
             subprocess.call(cmd, shell=True)
             self.__set_display(display_port=port + 5900)
             return True
         else:
             return False
-
+            
     def free_port(self, port_base):
         # verifica que el puerto este libre 0: <ocupado> 1: <libre>
         port = port_base
@@ -79,25 +80,33 @@ class RcSC3(object):
 
     def port_proxy_nvnc(self):
         self.__set_listen_proxy(listen_port=self.free_port(port_base=6080))
-
-    def __clear(self):
+    def clear(self):
         cmd = "/opt/TurboVNC/bin/vncserver -kill :" + str(self.get_display())
         subprocess.call(cmd, shell=True)
 
     def services(self, parallel, np_mpi, n_gpu):
         self.port_server_paraview()
 
+        mpiexec = "/data/ParaView/bin/mpiexec"
+        pvserver = "/data/ParaView/bin/pvserver"
+        s_port = "--server-port=" + str(self.get_server_port())
+
         if(parallel):
-            server_paraview = spv.run_ps_client(
-                displayVar=str(self.get_display() - 5900),
-                user=self.user,
-                group=self.group,
-                home=self.home,
-                username=self.username,
-                server_port=self.get_server_port(),
-                np=np_mpi,
-                n_gpu=n_gpu
-            )
+            if(n_gpu == 1):
+                cmd = ['nohup', mpiexec, "-np", str(np_mpi), pvserver,
+                       s_port, "-display", ":0.0", "--force-offscreen-rendering"
+                       ]
+            else:
+                cmd = ['nohup', mpiexec, "-np", str(np_mpi), pvserver,
+                       s_port, "-display", ":0.0", "--force-offscreen-rendering",
+                       ":",
+                       "-np", str(np_mpi), pvserver,
+                       s_port, "-display", ":0.1", "--force-offscreen-rendering",
+                        subprocess.Popen(cmd,
+                             stdout=open('/dev/null', 'w'),
+                             stderr=open('logpv.log', 'a'),
+                             preexec_fn=os.setpgrp
+                             )
 
         client_paraview = pv.run_pclient(
             displayVar=str(self.get_display() - 5900),
@@ -109,7 +118,7 @@ class RcSC3(object):
             paralelo=parallel
         )
 
-        str_tmp = "192.168.66.25:" + str(self.get_display())
+    str_tmp = "192.168.66.25:" + str(self.get_display())
         cmd_vnc = ["--vnc", str_tmp]
         self.port_proxy_nvnc()
         client_nvnc = nv.run_nclient(
@@ -120,6 +129,10 @@ class RcSC3(object):
             group=self.group,
             home=self.home
         )
+#        t = client_paraview.info()
+#        for k, v in t.items():
+#            print("{} {}".format(k, v))          ]
+
 
     def menu(self):
 
@@ -151,14 +164,18 @@ if __name__ == "__main__":
     c = RcSC3(username=getuser(), user=os.getuid(), group=os.getgid(), home=os.getenv('HOME'))
 
     subprocess.call("xhost + > /dev/null 2>&1", shell=True)
+    try:
+        if(c.start_vnc()):
 
-    if(c.start_vnc()):
-
-        c.port_proxy_nvnc()  # set port novnc proxy
-        c.services(parallel=options.parallel, np_mpi=options.np,
-                   n_gpu=options.ngpu)  # start services by args main
-        c.menu()  # show info to conexion
-    else:
-        print(" We no have any free service")
+            c.port_proxy_nvnc()  # set port novnc proxy
+            c.services(parallel=options.parallel, np_mpi=options.np,
+                       n_gpu=options.ngpu)  # start services by args main
+            c.menu()  # show info to conexion
+        else:
+            print(" We no have any free service")
+    except Exception as e:
+        raise e
+        c.clear()
 
     subprocess.call("xhost - > /dev/null 2>&1", shell=True)
+    
