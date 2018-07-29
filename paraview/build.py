@@ -6,7 +6,7 @@ import os
 
 route = os.path.dirname(os.path.abspath(__file__))
 
-client = docker.from_env()
+client = docker.DockerClient(base_url='tcp://192.168.66.25:2376')
 
 client.images.build(
     path=route,
